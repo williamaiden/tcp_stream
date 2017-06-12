@@ -1,0 +1,45 @@
+int PoCSession::decodeNetPackage(const SOCKET tcp_socket, unsigned char* data, unsigned int len){
+	static unsigned char tcp_buffer[1024] = { '\0' };
+	static unsigned int full_size = 0, buffer_pos = 0, remain_size = 0;
+	
+	while (len >= 0 && remain_size <= len){
+		if (remain_size > 0){
+			memcpy(&tcp_buffer[buffer_pos], data, remain_size);
+			//consumer
+			decodeFrame(tcp_socket, tcp_buffer, full_size);
+			len -= remain_size;
+			data += remain_size;
+			remain_size = 0;
+		}
+		if (!data || len < 4){
+			//此处可能size被拆分，造成误丢包
+			return -1;
+		}
+		unsigned int size = 0;
+		//data size
+		memcpy(&size, data, 4);
+		//ntohl,ntohs大小端转换（仅非char类型需要）
+		size = ntohl(size);
+		if (size <= 0){
+			return -1;
+		}
+		if (size == len - 4){//刚好一包大小
+			break;
+		}
+		if (size < len - 4){//需要拆分...
+			//consumer
+			decodeFrame(tcp_socket, data + 4, size);
+			data += size;
+			len -= (size + 4);
+			continue;
+		}
+		if (size > (len - 4)){//需要拼接...
+			remain_size = size + 4 - len;
+			memcpy(tcp_buffer, data, len - 4);
+			buffer_pos = len - 4;
+			full_size = size;
+			return 0;
+		}
+	}
+	return decodeFrame(tcp_socket, data + 4, len - 4);
+}
